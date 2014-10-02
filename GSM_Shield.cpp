@@ -332,6 +332,7 @@ byte GSM::IsStringReceived(char const *compare_string)
 			DebugPrint("\r\n", 0);
 		#endif
 	*/
+    
     ch = strstr((char *)comm_buf, compare_string);
     if (ch != NULL) {
       ret_val = 1;
@@ -442,6 +443,7 @@ char GSM::SendATCmdWaitResp(char const *AT_cmd_string,
   byte i;
 
   for (i = 0; i < no_of_attempts; i++) {
+    
     // delay 500 msec. before sending next repeated AT command 
     // so if we have no_of_attempts=1 tmout will not occurred
     if (i > 0) delay(500); 
@@ -532,8 +534,8 @@ void GSM::TurnOn(long baud_rate)
 			DebugPrint("DEBUG: GSM module is on\r\n", 0);
 		#endif
 	}
-	if (AT_RESP_ERR_DIF_RESP == SendATCmdWaitResp("AT", 500, 100, "OK", 5)) {		//check OK
-			
+	if (AT_RESP_ERR_DIF_RESP == SendATCmdWaitResp("AT", 5000, 1000, "OK", 5)) {		//check OK
+    
 		#ifdef DEBUG_PRINT
 			// parameter 0 - because module is off so it is not necessary 
 			// to send finish AT<CR> here
@@ -1376,8 +1378,10 @@ char GSM::SendSMS(char *number_str, char *message_str)
   if (CLS_FREE != GetCommLineStatus()) return (ret_val);
   SetCommLineStatus(CLS_ATCMD);  
   ret_val = 0; // still not send
+  
   // try to send SMS 3 times in case there is some problem
-  for (i = 0; i < 3; i++) {
+  for (i = 0; i < 10; i++) {
+    
     // send  AT+CMGS="number_str"
     Serial2.write("AT+CMGS=\"");
     Serial2.write(number_str);  
@@ -1385,19 +1389,15 @@ char GSM::SendSMS(char *number_str, char *message_str)
 
     // 1000 msec. for initial comm tmout
     // 50 msec. for inter character timeout
-    if (RX_FINISHED_STR_RECV == WaitResp(1000, 50, ">")) {
+    if (RX_FINISHED_STR_RECV == WaitResp(7000, 5000, ">")) {    
+      
       // send SMS text
       Serial2.write(message_str); 
 	  
-#ifdef DEBUG_SMS_ENABLED
-      // SMS will not be sent = we will not pay => good for debugging
-      Serial2.write(0x1b);
-      if (RX_FINISHED_STR_RECV == WaitResp(7000, 50, "OK")) {
-#else 
+      DebugPrint("writing 0x1a\r\n", 0);
       Serial2.write(0x1a);
 	  //Serial2.flush(); // erase rx circular buffer
       if (RX_FINISHED_STR_RECV == WaitResp(7000, 5000, "+CMGS")) {
-#endif
         // SMS was send correctly 
         ret_val = 1;
 		#ifdef DEBUG_PRINT
@@ -1405,12 +1405,25 @@ char GSM::SendSMS(char *number_str, char *message_str)
 		#endif
         break;
       }
-      else continue;
+      else {
+        DebugPrint("Failed to write text body cancelling text\r\n", 0);
+      }
     }
     else {
-      // try again
-      continue;
+      DebugPrint("Failed to write phone #\r\n", 0);
     }
+    
+    if(ret_val != 1) {
+      DebugPrint("Failed to send text, cancelling\r\n", 0);
+      Serial2.write("\x1b\r\n");
+      if (RX_FINISHED_STR_RECV == WaitResp(7000, 500, "OK")) {
+        DebugPrint("successfully cancelled after phone\r\n", 0);
+      }
+      else{
+        DebugPrint("no response from cancelling after phone\r\n", 0);
+      }
+    }
+    
   }
 
   SetCommLineStatus(CLS_FREE);
